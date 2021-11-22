@@ -8,6 +8,7 @@ using System.Linq;
 using TokenStoreDemo.Function.Apim;
 using Microsoft.Azure.Services.AppAuthentication;
 using Google.Apis.Gmail.v1;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace TokenStoreDemo.Function
 {
@@ -35,6 +36,7 @@ namespace TokenStoreDemo.Function
 
         private static async Task<object> RunUsingGetTokenBackEndpointAsync(ApimService apimService)
         {
+            // Get Attachment from Gmail
             var gmailToken = await apimService.GetTokenBackBackAsync("google1", "auth1");
             var gmailService = new GmailService(
                 new Google.Apis.Services.BaseClientService.Initializer() {
@@ -51,14 +53,14 @@ namespace TokenStoreDemo.Function
             //         // TODO(seaki): upload to dropbox
             //     }
             // }
+            var attachment = await gmailService.Users.Messages.Attachments.Get(
+                "me", "17d3a9446fd7c94a", "ANGjdJ8-nGL_qcyi0LW1tBjZx6FPZwBa7GENOniTHnbRNIKc-fpM57CNASykfHZfwkM2zxDT4WWkACFp3iEJ9q7LEzkpcSUMZ8xVcwhjDwDzzcuFHaae5Pl1pvDAP3LyQ7azE5m-77JpsU8Hc6XlFW4_qbXejeCsebsXaWC_0gFxJWtvK9BQSUF1kEGzsR48lKWrA2TKkFwxdaAcW038dxviAANZ1B6anrw9yxt8BwAwTc8FVtpx59Q0asaJk7lv96aPi0T8pG4eErj0WhyIwe2RfvdfbHvGJi-SjuNNoaqnKrMx8caVOu_P8Z3AVqA"
+                ).ExecuteAsync();
+            var attachmentRawContent = (Base64UrlTextEncoder.Decode(attachment.Data)).ToString();
 
-            return messages;
-        }
-
-        // TODO(seaki): finish
-        private static async Task RunUsingAttachTokenToBackendEndpointAsync(ApimService apimService)
-        {
-            // await apimService.Get
+            // Dropbox
+            var result = await apimService.DropboxUploadFileAsync("temp.txt", attachmentRawContent);
+            return result;
         }
     }
 }
