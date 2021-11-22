@@ -4,19 +4,20 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using Google.Apis.Gmail.v1.Data;
+using Newtonsoft.Json.Linq;
 
-namespace TokenStoreDemo.Function.Apim
+namespace TokenStoreDemo.Function
 {
     internal class ApimService
     {
         private readonly string _apimBaseUrl;
         private readonly HttpClient _httpClient;
 
-        public ApimService(string baseUrl, string identityToken)
+        public ApimService(string baseUrl, string subscriptionKey, string identityToken)
         {
             _apimBaseUrl = baseUrl;
             _httpClient = new HttpClient();
-            _httpClient.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", "0c0b8b18728c4c868dacaaf1d8d9c133");
+            _httpClient.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", subscriptionKey);
             _httpClient.DefaultRequestHeaders.Add("Authorization", identityToken); // TODO(seaki): rename header? // TODO(seaki): should be a handler because access token may expire
         }
 
@@ -44,7 +45,7 @@ namespace TokenStoreDemo.Function.Apim
             return aid;
         }
 
-        public async Task<object> DropboxUploadFileAsync(string filename, string rawData) {
+        public async Task<JObject> DropboxUploadFileAsync(string filename, string rawData) {
 		    using (var request = new HttpRequestMessage(HttpMethod.Post, $"{_apimBaseUrl}/dropbox/files/upload"))
             {
                 request.Content = new StringContent(rawData);
@@ -53,7 +54,8 @@ namespace TokenStoreDemo.Function.Apim
 
                 var response = await _httpClient.SendAsync(request);
                 response.EnsureSuccessStatusCode();
-                return await response.Content.ReadAsStringAsync();
+                var content = await response.Content.ReadAsStringAsync();
+                return JObject.Parse(content);
             }
         }
     }

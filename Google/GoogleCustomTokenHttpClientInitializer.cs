@@ -1,4 +1,3 @@
-using Google.Apis.Gmail.v1;
 using Google.Apis.Http;
 
 namespace TokenStoreDemo.Function
