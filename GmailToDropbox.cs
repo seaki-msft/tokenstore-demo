@@ -1,17 +1,16 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
+using Google.Apis.Gmail.v1;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Azure.Services.AppAuthentication;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using System.Linq;
-using Microsoft.Azure.Services.AppAuthentication;
-using Google.Apis.Gmail.v1;
-using Microsoft.AspNetCore.WebUtilities;
-using System.Text;
-using System.Collections.Generic;
-using System;
-using Microsoft.Net.Http.Headers;
 
 namespace TokenStoreDemo.Function
 {
@@ -42,32 +41,37 @@ namespace TokenStoreDemo.Function
         {
             var uploadedFileNames = new List<string>();
 
-            // Get Attachment from Gmail
-            var gmailToken = await apimService.GetTokenBackBackAsync("google1", "auth1");
+            // 1. Get the Latest Attachment from Gmail by utilizing "GetTokenBack" endpoint of my API Management
+            var gmailToken = await apimService.GetTokenBackAsync("google1", "auth1");
             var gmailService = new GmailService(
-                new Google.Apis.Services.BaseClientService.Initializer() {
+                new Google.Apis.Services.BaseClientService.Initializer()
+                {
                     HttpClientInitializer = new GoogleCustomTokenHttpClientInitializer(gmailToken)
                 });
-            
+
             var messages = await gmailService.Users.Messages.List("me").ExecuteAsync();
-            foreach (var message in messages.Messages) {
+            foreach (var message in messages.Messages)
+            {
                 var fullMessage = await gmailService.Users.Messages.Get("me", message.Id).ExecuteAsync();
                 var attachmentParts = fullMessage.Payload?.Parts?.Where(p => p?.Body?.AttachmentId != null);
-                if (attachmentParts == null) {
+                if (attachmentParts == null)
+                {
                     continue;
                 }
 
-                foreach (var attachmentPart in attachmentParts) {
+                foreach (var attachmentPart in attachmentParts)
+                {
                     var attachment = await gmailService.Users.Messages.Attachments.Get("me", message.Id, attachmentPart.Body.AttachmentId).ExecuteAsync();
                     var attachmentRawContent = Encoding.Default.GetString(Base64UrlTextEncoder.Decode(attachment.Data));
 
-                    // Upload to Dropbox
-                    var result = await apimService.DropboxUploadFileAsync(attachmentPart.Filename, attachmentRawContent);
+                    // 2. Upload to Dropbox by utilizing the "Dropbox - UploadFile" endpoint of my API Management
+                    var filename = $"{DateTime.UtcNow:s}-{attachmentPart.Filename}";
+                    var result = await apimService.DropboxUploadFileAsync(filename, attachmentRawContent);
                     uploadedFileNames.Add(result["name"].ToString());
                 }
 
                 // For simplicity, upload just the latest attachment
-                break; 
+                break;
             }
             return uploadedFileNames;
         }
