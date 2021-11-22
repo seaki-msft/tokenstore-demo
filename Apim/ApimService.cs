@@ -11,14 +11,15 @@ namespace TokenStoreDemo.Function.Apim
         private readonly string _apimBaseUrl;
         private readonly HttpClient _httpClient;
 
-        public ApimService(string baseUrl)
+        public ApimService(string baseUrl, string identityToken)
         {
             _apimBaseUrl = baseUrl;
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", "0c0b8b18728c4c868dacaaf1d8d9c133");
+            _httpClient.DefaultRequestHeaders.Add("Authorization", identityToken); // TODO(seaki): rename header? // TODO(seaki): should be a handler because access token may expire
         }
 
-        public async Task<string> GetTokenBackAsync(string providerId, string authorizationId) {
+        public async Task<string> GetTokenBackBackAsync(string providerId, string authorizationId) {
             var endpoint = $"{_apimBaseUrl}/token-store/fetch?provider-id={providerId}&authorization-id={authorizationId}";
             var response = await _httpClient.GetAsync(endpoint);
             var content = await response.Content.ReadAsStringAsync();
