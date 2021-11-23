@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -18,30 +17,52 @@ namespace TokenStoreDemo.Function
     {
         private readonly string[] AllowedTokenStoreAudience = new string[] { "https://management.core.windows.net/", "https://apihub.azure.com" };
 
+        /// <summary>
+        /// This function (1) gets the latest attachment in your gmail inbox and (2) upload it to your dropbox folder. 
+        /// The former utilizes the "Get Token Back" pattern, where API Management Token store is used to store tokens
+        /// only. The latter utilizes the "Attach Token to Backend Call" pattern, where API Management is working as a 
+        /// proxy that attaches the access token to the backend call using the policy. 
+        /// 
+        /// Your APIM Service needs to have setup two endpoints:
+        /// - token-store/fetch: Endpoint to fetch tokens given the authorizationProviderId and authorizationId
+        /// - dropbox/files/upload: Proxy Endpoint that attaches your dropbox authorization before calling dropbox. 
+        /// </summary>
         [FunctionName("GmailToDropbox")]
         public async Task<IActionResult> Run(
             [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
             ILogger log)
         {
-            var azureServiceTokenProvider = new AzureServiceTokenProvider();
-            var msiToken = await azureServiceTokenProvider.GetAccessTokenAsync(AllowedTokenStoreAudience.First());
+            try
+            {
+                // Set environment variables in Azure Functions Configuration and local.settings.json for (local development)
+                var myApimEndpoint = Environment.GetEnvironmentVariable("MyApimEndpoint") ?? throw new Exception("MyApimEndpoint Environment variable not set");
+                var mySubscriptionKey = Environment.GetEnvironmentVariable("MyApimSubscriptionKey") ?? throw new Exception("MyApimSubscriptionKey Environment variable not set");
+                var azureServiceTokenProvider = new AzureServiceTokenProvider();
+                var managedIdentityToken = await azureServiceTokenProvider.GetAccessTokenAsync(AllowedTokenStoreAudience.First());
+                var apimService = new ApimService(myApimEndpoint, mySubscriptionKey, managedIdentityToken);
 
-            // Set environment variables in local.settings.json (local development) and Configuration (Azure)
-            var myApimEndpoint = Environment.GetEnvironmentVariable("MyApimEndpoint") ?? throw new Exception("MyApimEndpoint Environment variable not set");
-            var mySubscriptionKey = Environment.GetEnvironmentVariable("MyApimSubscriptionKey") ?? throw new Exception("MyApimSubscriptionKey Environment variable not set");
-            var apimService = new ApimService(myApimEndpoint, mySubscriptionKey, msiToken);
-            var uploadedFileNames = await UploadLatestAttachmentToGmail(apimService);
+                // 1. Get the Latest Attachment from Gmail by utilizing "GetTokenBack" endpoint of my API Management
+                var attachment = await GetLatestGmailAttachment(apimService);
+                var message = "No attachment found";
+                if (attachment != null)
+                {
+                    // 2. Upload to Dropbox by utilizing the "Dropbox - UploadFile" endpoint of my API Management
+                    var uploadedFileName = await UploadToDropbox(apimService, attachment.Item1, attachment.Item2);
+                    message = $"Uploaded the following files to dropbox: {uploadedFileName}";
+                }
 
-            var message = $"Uploaded the following files to dropbox: {string.Join(',', uploadedFileNames)}";
-            log.LogInformation(message);
-            return new OkObjectResult(message);
+                log.LogInformation(message);
+                return new OkObjectResult(message);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex.ToString());
+                throw;
+            }
         }
 
-        private async Task<List<string>> UploadLatestAttachmentToGmail(ApimService apimService)
+        private async Task<Tuple<string, string>> GetLatestGmailAttachment(ApimService apimService)
         {
-            var uploadedFileNames = new List<string>();
-
-            // 1. Get the Latest Attachment from Gmail by utilizing "GetTokenBack" endpoint of my API Management
             var gmailToken = await apimService.GetTokenBackAsync("google1", "auth1");
             var gmailService = new GmailService(
                 new Google.Apis.Services.BaseClientService.Initializer()
@@ -62,18 +83,18 @@ namespace TokenStoreDemo.Function
                 foreach (var attachmentPart in attachmentParts)
                 {
                     var attachment = await gmailService.Users.Messages.Attachments.Get("me", message.Id, attachmentPart.Body.AttachmentId).ExecuteAsync();
-                    var attachmentRawContent = Encoding.Default.GetString(Base64UrlTextEncoder.Decode(attachment.Data));
-
-                    // 2. Upload to Dropbox by utilizing the "Dropbox - UploadFile" endpoint of my API Management
-                    var filename = $"{DateTime.UtcNow:s}-{attachmentPart.Filename}";
-                    var result = await apimService.DropboxUploadFileAsync(filename, attachmentRawContent);
-                    uploadedFileNames.Add(result["name"].ToString());
+                    return new Tuple<string, string>(attachmentPart.Filename, attachment.Data);
                 }
-
-                // For simplicity, upload just the latest attachment
-                break;
             }
-            return uploadedFileNames;
+            return null;
+        }
+
+        private async Task<string> UploadToDropbox(ApimService apimService, string attachmentFileName, string attachmentData)
+        {
+            var attachmentRawContent = Encoding.Default.GetString(Base64UrlTextEncoder.Decode(attachmentData));
+            var filename = $"{DateTime.UtcNow:s}-{attachmentFileName}";
+            var result = await apimService.DropboxUploadFileAsync(filename, attachmentRawContent);
+            return result["name"].ToString();
         }
     }
 }
